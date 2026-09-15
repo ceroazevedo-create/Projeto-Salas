@@ -1537,6 +1537,27 @@ export const getUserBookings =
 export const bookingService = {
   getBookings,
   getUserBookings,
+
+  getAllBookings,
+  getBookingsByUserId,
+  getBookingsByDate,
+  getBookingsByRoom,
+
+  getBlockedSlots,
+  getRooms,
+  getUnblockedHolidays,
+  isGlobalHolidaysAllowed,
+
+  getPeriodConfig,
+  checkConflict,
+  createBooking,
+  cancelBooking,
+
+  updatePaymentStatus,
+  deleteBookingsByUserId,
+  getBookingById,
+  updateBooking,
+
   getBookingsByMonth,
   calculateBookingTotals,
 };
