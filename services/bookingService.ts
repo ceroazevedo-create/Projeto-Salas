@@ -11,16 +11,48 @@ import { getClosingHourForDate, SATURDAY_HOURS_END, INITIAL_PERIOD_RATES, getPer
 function mapDbBookingToBooking(b: any, profilesMap?: Map<string, any>): Booking {
   const clientObj = Array.isArray(b.clients) ? b.clients[0] : b.clients;
   const profileObj = Array.isArray(b.profiles) ? b.profiles[0] : b.profiles;
-  const uid = b.user_id || b.professional_id || '';
+  const uid = b.professional_id || b.user_id || '';
   const profile = profilesMap?.get(uid) || profileObj;
 
-  const hour = Number(b.hour !== undefined ? b.hour : (b.start_time !== undefined ? b.start_time : 7));
-  const duration = Number(b.duration_hours || b.total_hours || (b.end_time ? b.end_time - hour : 1));
-  const endHour = Number(b.end_time_hour || b.end_time || (hour + duration));
-  const price = Number(b.price_at_booking || b.hourly_rate || 40.0);
-  const total = Number(b.total_amount || (price * duration));
-  const type: BookingType = (b.type || b.booking_type || (duration >= 14 ? 'PERIOD' : 'HOURLY')) as BookingType;
-  const paymentStatus: PaymentStatus = (b.payment_status || (b.status === 'cancelled' ? 'CANCELLED' : 'PENDING')) as PaymentStatus;
+  const hour = Number(
+    b.start_time !== undefined
+      ? b.start_time
+      : (b.hour !== undefined ? b.hour : 7)
+  );
+
+  const duration = Number(
+    b.total_hours ||
+    b.duration_hours ||
+    (b.end_time !== undefined ? b.end_time - hour : 1)
+  );
+
+  const endHour = Number(
+    b.end_time !== undefined
+      ? b.end_time
+      : (b.end_time_hour !== undefined ? b.end_time_hour : hour + duration)
+  );
+
+  const price = Number(
+    b.hourly_rate ||
+    b.price_at_booking ||
+    40.0
+  );
+
+  const total = Number(
+    b.total_amount ||
+    (price * duration)
+  );
+
+  const type: BookingType = (
+    b.booking_type ||
+    b.type ||
+    (duration >= 14 ? 'PERIOD' : 'HOURLY')
+  ) as BookingType;
+
+  const paymentStatus: PaymentStatus = (
+    b.payment_status ||
+    (b.status === 'cancelled' ? 'CANCELLED' : 'PENDING')
+  ) as PaymentStatus;
 
   return {
     id: String(b.id),
@@ -30,7 +62,7 @@ function mapDbBookingToBooking(b: any, profilesMap?: Map<string, any>): Booking 
     clientId: b.client_id || undefined,
     clientName: clientObj?.full_name || b.client_name || undefined,
     roomId: (b.room_id || 'Sala 1') as RoomId,
-    date: b.date || b.booking_date || '',
+    date: b.booking_date || b.date || '',
     hour: hour,
     durationHours: duration,
     endTimeHour: endHour,
@@ -90,13 +122,19 @@ export const bookingService = {
 
         if (bookRes.data) {
           const profilesMap = new Map<string, any>();
+
           if (profRes.data) {
-            profRes.data.forEach((p: any) => profilesMap.set(p.id, p));
+            profRes.data.forEach((p: any) => {
+              profilesMap.set(p.id, p);
+            });
           }
 
           const localBookings = getStoredBookings();
           const localMap = new Map<string, Booking>();
-          localBookings.forEach(lb => localMap.set(lb.id, lb));
+
+          localBookings.forEach(lb => {
+            localMap.set(lb.id, lb);
+          });
 
           const activeRemote = bookRes.data
             .filter((b: any) => {
@@ -106,6 +144,7 @@ export const bookingService = {
             .map((b: any) => {
               const mapped = mapDbBookingToBooking(b, profilesMap);
               const localMatch = localMap.get(mapped.id);
+
               if (localMatch) {
                 return {
                   ...mapped,
@@ -116,17 +155,23 @@ export const bookingService = {
                   endTimeHour: localMatch.endTimeHour || mapped.endTimeHour
                 };
               }
+
               return mapped;
             });
 
           return activeRemote;
         }
       } catch (err) {
-        console.warn('Erro ao carregar reservas do Supabase, usando local:', err);
+        console.warn(
+          'Erro ao carregar reservas do Supabase, usando local:',
+          err
+        );
       }
     }
 
-    return getStoredBookings().filter(b => b.paymentStatus !== 'CANCELLED');
+    return getStoredBookings().filter(
+      b => b.paymentStatus !== 'CANCELLED'
+    );
   },
 
   // Retorna inclusive os cancelados se necessário para auditoria
@@ -140,17 +185,24 @@ export const bookingService = {
 
         if (bookRes.data) {
           const profilesMap = new Map<string, any>();
+
           if (profRes.data) {
-            profRes.data.forEach((p: any) => profilesMap.set(p.id, p));
+            profRes.data.forEach((p: any) => {
+              profilesMap.set(p.id, p);
+            });
           }
 
           const localBookings = getStoredBookings();
           const localMap = new Map<string, Booking>();
-          localBookings.forEach(lb => localMap.set(lb.id, lb));
+
+          localBookings.forEach(lb => {
+            localMap.set(lb.id, lb);
+          });
 
           return bookRes.data.map((b: any) => {
             const mapped = mapDbBookingToBooking(b, profilesMap);
             const localMatch = localMap.get(mapped.id);
+
             if (localMatch) {
               return {
                 ...mapped,
@@ -161,11 +213,15 @@ export const bookingService = {
                 endTimeHour: localMatch.endTimeHour || mapped.endTimeHour
               };
             }
+
             return mapped;
           });
         }
       } catch (err) {
-        console.warn('Erro ao carregar todas as reservas do Supabase, usando local:', err);
+        console.warn(
+          'Erro ao carregar todas as reservas do Supabase, usando local:',
+          err
+        );
       }
     }
 
@@ -173,13 +229,18 @@ export const bookingService = {
   },
 
   // Busca agendamentos de um profissional específico
-  getBookingsByProfessional: async (userId: string): Promise<Booking[]> => {
+  getBookingsByProfessional: async (
+    userId: string
+  ): Promise<Booking[]> => {
     if (isSupabaseConfigured) {
       try {
         const all = await bookingService.getAllBookings();
         return all.filter(b => b.userId === userId);
       } catch (err) {
-        console.warn('Erro ao carregar reservas do profissional do Supabase, usando local:', err);
+        console.warn(
+          'Erro ao carregar reservas do profissional do Supabase, usando local:',
+          err
+        );
       }
     }
 
@@ -187,7 +248,7 @@ export const bookingService = {
     return all.filter(b => b.userId === userId);
   },
 
-  // Regra Crítica de Conflito (#26 e Seção 21)
+  // Regra Crítica de Conflito
   checkConflict: async (
     roomId: RoomId,
     date: string,
@@ -195,23 +256,28 @@ export const bookingService = {
     endHour: number,
     excludeBookingId?: string
   ): Promise<{ hasConflict: boolean; reason?: string }> => {
+
     // 0. Regra: Domingo fechado e Sábado até 14h
     if (date) {
       const [y, m, d] = date.split('-').map(Number);
       const dayOfWeek = new Date(y, m - 1, d).getDay();
+
       if (dayOfWeek === 0) {
-        return { 
-          hasConflict: true, 
-          reason: 'As salas não são utilizadas aos domingos.' 
+        return {
+          hasConflict: true,
+          reason: 'As salas não são utilizadas aos domingos.'
         };
       }
+
       const closingHour = getClosingHourForDate(dayOfWeek);
+
       if (endHour > closingHour || startHour >= closingHour) {
         return {
           hasConflict: true,
-          reason: dayOfWeek === 6 
-            ? 'Aos sábados o atendimento das salas vai somente até as 14:00.' 
-            : `O horário de encerramento das salas neste dia é às ${closingHour}:00.`
+          reason:
+            dayOfWeek === 6
+              ? 'Aos sábados o atendimento das salas vai somente até as 14:00.'
+              : `O horário de encerramento das salas neste dia é às ${closingHour}:00.`
         };
       }
     }
@@ -227,9 +293,19 @@ export const bookingService = {
 
         if (!blockErr && blocks) {
           const overlappingBlock = blocks.find(blk => {
-            if (blk.room_id !== 'ALL' && blk.room_id !== roomId) return false;
-            return Math.max(startHour, blk.start_time) < Math.min(endHour, blk.end_time);
+            if (
+              blk.room_id !== 'ALL' &&
+              blk.room_id !== roomId
+            ) {
+              return false;
+            }
+
+            return (
+              Math.max(startHour, blk.start_time) <
+              Math.min(endHour, blk.end_time)
+            );
           });
+
           if (overlappingBlock) {
             return {
               hasConflict: true,
@@ -239,86 +315,150 @@ export const bookingService = {
         }
 
         // Verifica reservas na data e sala
-        const { data: existingBookings, error: bookErr } = await supabase
-          .from('bookings')
-          .select('*')
-          .eq('room_id', roomId);
+        const { data: existingBookings, error: bookErr } =
+          await supabase
+            .from('bookings')
+            .select('*')
+            .eq('room_id', roomId);
 
         if (!bookErr && existingBookings) {
           const dayBookings = existingBookings.filter((b: any) => {
-            const bDate = b.date || b.booking_date;
-            const bStatus = (b.payment_status || b.status || '').toUpperCase();
+            const bDate = b.booking_date;
+
+            const bStatus = (
+              b.payment_status ||
+              b.status ||
+              ''
+            ).toUpperCase();
+
             if (bDate !== date) return false;
+
             if (bStatus === 'CANCELLED') return false;
-            if (excludeBookingId && String(b.id) === String(excludeBookingId)) return false;
+
+            if (
+              excludeBookingId &&
+              String(b.id) === String(excludeBookingId)
+            ) {
+              return false;
+            }
+
             return true;
           });
 
           for (const b of dayBookings) {
-            const bStart = Number(b.hour !== undefined ? b.hour : b.start_time);
-            const bDuration = Number(b.duration_hours || b.total_hours || (b.end_time ? b.end_time - bStart : 1));
-            const bEnd = Number(b.end_time_hour || b.end_time || (bStart + bDuration));
-            const bType = b.type || b.booking_type;
+            const bStart = Number(b.start_time);
+            const bEnd = Number(b.end_time);
+            const bType = b.booking_type;
 
-            if (Math.max(startHour, bStart) < Math.min(endHour, bEnd)) {
-              const periodLabel = b.period_name || b.periodName 
-                ? ` (Período da ${b.period_name || b.periodName})` 
-                : (bType === 'PERIOD' && (bEnd - bStart >= 14) ? ' (Período Integral)' : '');
-              return { 
-                hasConflict: true, 
-                reason: `O horário das ${bStart}:00 às ${bEnd}:00${periodLabel} já está reservado nesta sala.` 
+            if (
+              Math.max(startHour, bStart) <
+              Math.min(endHour, bEnd)
+            ) {
+              const periodLabel =
+                b.period_name
+                  ? ` (Período da ${b.period_name})`
+                  : (
+                      bType === 'PERIOD' &&
+                      bEnd - bStart >= 14
+                    )
+                    ? ' (Período Integral)'
+                    : '';
+
+              return {
+                hasConflict: true,
+                reason:
+                  `O horário das ${bStart}:00 às ${bEnd}:00` +
+                  `${periodLabel} já está reservado nesta sala.`
               };
             }
           }
-          return { hasConflict: false };
+
+          return {
+            hasConflict: false
+          };
         }
       } catch (e) {
-        console.warn('Erro ao checar conflito no Supabase, checando local:', e);
+        console.warn(
+          'Erro ao checar conflito no Supabase, checando local:',
+          e
+        );
       }
     }
 
     // Fallback: verificação com armazenamento local
-    const allBookings = getStoredBookings().filter(b => 
-      b.paymentStatus !== 'CANCELLED' && 
-      (!excludeBookingId || b.id !== excludeBookingId)
+    const allBookings = getStoredBookings().filter(
+      b =>
+        b.paymentStatus !== 'CANCELLED' &&
+        (!excludeBookingId || b.id !== excludeBookingId)
     );
+
     const allBlocks = getStoredBlockedSlots();
 
-    // 1. Verifica bloqueios administrativos para a sala ou para todas as salas
+    // Verifica bloqueios administrativos
     const overlappingBlock = allBlocks.find(blk => {
       if (blk.date !== date) return false;
-      if (blk.roomId !== 'ALL' && blk.roomId !== roomId) return false;
-      return Math.max(startHour, blk.startHour) < Math.min(endHour, blk.endHour);
+
+      if (
+        blk.roomId !== 'ALL' &&
+        blk.roomId !== roomId
+      ) {
+        return false;
+      }
+
+      return (
+        Math.max(startHour, blk.startHour) <
+        Math.min(endHour, blk.endHour)
+      );
     });
 
     if (overlappingBlock) {
-      return { 
-        hasConflict: true, 
-        reason: `Horário bloqueado pela administração: ${overlappingBlock.reason}` 
+      return {
+        hasConflict: true,
+        reason:
+          `Horário bloqueado pela administração: ${overlappingBlock.reason}`
       };
     }
 
-    // 2. Verifica reservas existentes na mesma sala e data
-    const sameDayRoomBookings = allBookings.filter(b => b.roomId === roomId && b.date === date);
+    // Verifica reservas existentes na mesma sala e data
+    const sameDayRoomBookings = allBookings.filter(
+      b =>
+        b.roomId === roomId &&
+        b.date === date
+    );
 
     for (const b of sameDayRoomBookings) {
-      const bEnd = b.endTimeHour || (b.hour + (b.durationHours || 1));
+      const bEnd =
+        b.endTimeHour ||
+        (b.hour + (b.durationHours || 1));
 
-      if (Math.max(startHour, b.hour) < Math.min(endHour, bEnd)) {
-        const periodLabel = b.periodName 
-          ? ` (Período da ${b.periodName})` 
-          : (b.type === 'PERIOD' && (bEnd - b.hour >= 14) ? ' (Período Integral)' : '');
-        return { 
-          hasConflict: true, 
-          reason: `O horário das ${b.hour}:00 às ${bEnd}:00${periodLabel} já está reservado nesta sala.` 
+      if (
+        Math.max(startHour, b.hour) <
+        Math.min(endHour, bEnd)
+      ) {
+        const periodLabel = b.periodName
+          ? ` (Período da ${b.periodName})`
+          : (
+              b.type === 'PERIOD' &&
+              bEnd - b.hour >= 14
+            )
+            ? ' (Período Integral)'
+            : '';
+
+        return {
+          hasConflict: true,
+          reason:
+            `O horário das ${b.hour}:00 às ${bEnd}:00` +
+            `${periodLabel} já está reservado nesta sala.`
         };
       }
     }
 
-    return { hasConflict: false };
+    return {
+      hasConflict: false
+    };
   },
 
-  // Criação da locação com congelamento de valores (Seção 11 e Seção 24)
+  // Criação da locação com congelamento de valores
   createBooking: async (params: {
     userId: string;
     userEmail: string;
@@ -334,6 +474,7 @@ export const bookingService = {
     periodName?: string;
     notes?: string;
   }): Promise<Booking> => {
+
     let hourlyRate = 40.0;
     let periodRate = 350.0;
     let morningRate = INITIAL_PERIOD_RATES.MORNING;
@@ -354,126 +495,219 @@ export const bookingService = {
         if (roomData) {
           hourlyRate = Number(roomData.hourly_rate);
           periodRate = Number(roomData.period_rate);
-          if (roomData.morning_rate) morningRate = Number(roomData.morning_rate);
-          if (roomData.afternoon_rate) afternoonRate = Number(roomData.afternoon_rate);
-          if (roomData.night_rate) nightRate = Number(roomData.night_rate);
+
+          if (roomData.morning_rate) {
+            morningRate = Number(roomData.morning_rate);
+          }
+
+          if (roomData.afternoon_rate) {
+            afternoonRate = Number(roomData.afternoon_rate);
+          }
+
+          if (roomData.night_rate) {
+            nightRate = Number(roomData.night_rate);
+          }
+
           openHour = Number(roomData.opening_time);
           closeHour = Number(roomData.closing_time);
         }
       } catch (e) {
-        console.warn('Erro ao obter tarifas da sala no Supabase:', e);
+        console.warn(
+          'Erro ao obter tarifas da sala no Supabase:',
+          e
+        );
       }
     } else {
       const config = getSystemConfig();
-      const room = config.rooms.find(r => r.id === params.roomId);
+      const room = config.rooms.find(
+        r => r.id === params.roomId
+      );
+
       if (room) {
         hourlyRate = room.hourlyRate;
         periodRate = room.dailyRate;
-        if (room.morningRate) morningRate = room.morningRate;
-        if (room.afternoonRate) afternoonRate = room.afternoonRate;
-        if (room.nightRate) nightRate = room.nightRate;
+
+        if (room.morningRate) {
+          morningRate = room.morningRate;
+        }
+
+        if (room.afternoonRate) {
+          afternoonRate = room.afternoonRate;
+        }
+
+        if (room.nightRate) {
+          nightRate = room.nightRate;
+        }
+
         openHour = room.openHour;
         closeHour = room.closeHour;
       }
     }
 
     const isPeriod = params.type === 'PERIOD';
-    const periodShift: PeriodShift = params.periodShift || 'MORNING';
-    const periodConf = getPeriodConfig(periodShift, params.date);
 
-    const startHour = isPeriod ? periodConf.startHour : params.hour;
-    const duration = isPeriod ? periodConf.duration : (params.durationHours || 1);
+    const periodShift: PeriodShift =
+      params.periodShift || 'MORNING';
+
+    const periodConf = getPeriodConfig(
+      periodShift,
+      params.date
+    );
+
+    const startHour = isPeriod
+      ? periodConf.startHour
+      : params.hour;
+
+    const duration = isPeriod
+      ? periodConf.duration
+      : (params.durationHours || 1);
+
     const endHour = startHour + duration;
-    const periodName = params.periodName || periodConf.name;
 
-    // 1. Validação estrita de conflito no frontend
-    const conflict = await bookingService.checkConflict(params.roomId, params.date, startHour, endHour);
+    const periodName =
+      params.periodName || periodConf.name;
+
+    // 1. Validação estrita de conflito
+    const conflict =
+      await bookingService.checkConflict(
+        params.roomId,
+        params.date,
+        startHour,
+        endHour
+      );
+
     if (conflict.hasConflict) {
-      throw new Error(conflict.reason || 'Este horário não está mais disponível.');
+      throw new Error(
+        conflict.reason ||
+        'Este horário não está mais disponível.'
+      );
     }
 
-    // 2. Cálculo financeiro com congelamento de valor
+    // 2. Cálculo financeiro
     const priceAtBooking = hourlyRate;
+
     let totalAmount = 0;
+
     if (isPeriod) {
       if (periodShift === 'MORNING') {
         totalAmount = morningRate;
+
       } else if (periodShift === 'AFTERNOON') {
-        const isSat = getClosingHourForDate(params.date) === SATURDAY_HOURS_END;
-        totalAmount = isSat ? Math.round(afternoonRate * (2 / 6)) : afternoonRate;
+        const isSat =
+          getClosingHourForDate(params.date) ===
+          SATURDAY_HOURS_END;
+
+        totalAmount = isSat
+          ? Math.round(afternoonRate * (2 / 6))
+          : afternoonRate;
+
       } else if (periodShift === 'NIGHT') {
         totalAmount = nightRate;
+
       } else {
         totalAmount = periodRate;
       }
+
     } else {
       totalAmount = duration * hourlyRate;
     }
 
-    // 3. Persistência no Supabase e Local
+    // 3. Persistência no Supabase
+    //
+    // IMPORTANTE:
+    // A tabela bookings REAL possui:
+    // professional_id
+    // client_id
+    // room_id
+    // booking_date
+    // start_time
+    // end_time
+    // booking_type
+    // total_hours
+    // hourly_rate
+    // period_rate
+    // total_amount
+    // payment_status
+    // status
+    // notes
+
     let createdBookingId = 'bk-' + Date.now();
+
     if (isSupabaseConfigured) {
       try {
-        // Tenta inserir com as colunas base existentes da tabela remota
-        const basePayload = {
-          user_id: params.userId,
+        const payload = {
+          professional_id: params.userId,
+          client_id: params.clientId || null,
           room_id: params.roomId,
-          date: params.date,
-          hour: startHour,
-          price_at_booking: priceAtBooking
+          booking_date: params.date,
+          start_time: startHour,
+          end_time: endHour,
+          booking_type: isPeriod
+            ? 'PERIOD'
+            : 'HOURLY',
+          total_hours: duration,
+          hourly_rate: hourlyRate,
+          period_rate: isPeriod
+            ? totalAmount
+            : null,
+          total_amount: totalAmount,
+          payment_status: 'PENDING',
+          status: 'confirmed',
+          notes: params.notes || null
         };
 
-        const { data: created, error: baseErr } = await supabase
+        const {
+          data: created,
+          error
+        } = await supabase
           .from('bookings')
-          .insert(basePayload)
+          .insert(payload)
           .select()
-          .maybeSingle();
+          .single();
 
-        if (!baseErr && created) {
-          createdBookingId = String(created.id);
-        } else {
-          // Schema estendido alternativo
-          const extPayload = {
-            professional_id: params.userId,
-            client_id: params.clientId || null,
-            room_id: params.roomId,
-            booking_date: params.date,
-            start_time: startHour,
-            end_time: endHour,
-            booking_type: isPeriod ? 'PERIOD' : 'HOURLY',
-            total_hours: duration,
-            hourly_rate: hourlyRate,
-            period_rate: totalAmount,
-            total_amount: totalAmount,
-            payment_status: 'PENDING',
-            status: 'confirmed',
-            notes: params.notes || null
-          };
-
-          const { data: extCreated } = await supabase
-            .from('bookings')
-            .insert(extPayload)
-            .select()
-            .maybeSingle();
-
-          if (extCreated) {
-            createdBookingId = String(extCreated.id);
-          }
+        if (error) {
+          throw error;
         }
 
+        if (created) {
+          createdBookingId = String(created.id);
+        }
+
+        // Auditoria
         try {
-          await supabase.from('audit_logs').insert({
-            user_id: params.userId,
-            user_name: params.userName,
-            action: 'Nova Reserva',
-            details: `Locação criada: ${params.roomId}, ${params.date} das ${startHour}:00 às ${endHour}:00 (${isPeriod ? `Período da ${periodName}` : `${duration}h`}) (Total: R$ ${totalAmount.toFixed(2)})`
-          });
-        } catch {}
+          await supabase
+            .from('audit_logs')
+            .insert({
+              user_id: params.userId,
+              user_name: params.userName,
+              action: 'Nova Reserva',
+              details:
+                `Locação criada: ${params.roomId}, ` +
+                `${params.date} das ${startHour}:00 às ` +
+                `${endHour}:00 ` +
+                `(${isPeriod ? `Período da ${periodName}` : `${duration}h`}) ` +
+                `(Total: R$ ${totalAmount.toFixed(2)})`
+            });
+        } catch (auditError) {
+          console.warn(
+            'Aviso ao registrar auditoria:',
+            auditError
+          );
+        }
+
       } catch (err: any) {
-        console.warn('Aviso na sincronização de reserva:', err);
+        console.error(
+          'Erro ao criar reserva no Supabase:',
+          err
+        );
+
+        throw new Error(
+          translateSupabaseError(err)
+        );
       }
     }
 
+    // 4. Representação local da reserva
     const newBooking: Booking = {
       id: createdBookingId,
       userId: params.userId,
@@ -486,9 +720,15 @@ export const bookingService = {
       hour: startHour,
       durationHours: duration,
       endTimeHour: endHour,
-      type: isPeriod ? 'PERIOD' : 'HOURLY',
-      periodShift: isPeriod ? periodShift : undefined,
-      periodName: isPeriod ? periodName : undefined,
+      type: isPeriod
+        ? 'PERIOD'
+        : 'HOURLY',
+      periodShift: isPeriod
+        ? periodShift
+        : undefined,
+      periodName: isPeriod
+        ? periodName
+        : undefined,
       priceAtBooking,
       totalAmount,
       paymentStatus: 'PENDING',
@@ -497,45 +737,91 @@ export const bookingService = {
     };
 
     const current = getStoredBookings();
-    saveStoredBookings([newBooking, ...current.filter(b => b.id !== newBooking.id)]);
+
+    saveStoredBookings([
+      newBooking,
+      ...current.filter(
+        b => b.id !== newBooking.id
+      )
+    ]);
 
     addAuditLog(
       params.userId,
       params.userName,
       'Nova Reserva',
-      `Locação criada: ${params.roomId}, ${params.date} das ${startHour}:00 às ${endHour}:00 (${isPeriod ? `Período da ${periodName}` : `${duration}h`}) (Total: R$ ${totalAmount.toFixed(2)})`
+      `Locação criada: ${params.roomId}, ` +
+      `${params.date} das ${startHour}:00 às ` +
+      `${endHour}:00 ` +
+      `(${isPeriod ? `Período da ${periodName}` : `${duration}h`}) ` +
+      `(Total: R$ ${totalAmount.toFixed(2)})`
     );
 
     return newBooking;
   },
 
-  // Cancelamento de locação respeitando as regras configuradas (Seção 44)
-  cancelBooking: async (bookingId: string, user: { id: string; name: string; role: string }): Promise<void> => {
+  // Cancelamento de locação
+  cancelBooking: async (
+    bookingId: string,
+    user: {
+      id: string;
+      name: string;
+      role: string;
+    }
+  ): Promise<void> => {
+
     const isAdmin = user.role === 'ADMIN';
 
     if (isSupabaseConfigured) {
       try {
-        const { data: target, error: fetchErr } = await supabase
+        const {
+          data: target,
+          error: fetchErr
+        } = await supabase
           .from('bookings')
           .select('*')
           .eq('id', bookingId)
           .single();
 
-        if (fetchErr || !target) throw new Error('Reserva não encontrada.');
+        if (fetchErr || !target) {
+          throw new Error(
+            'Reserva não encontrada.'
+          );
+        }
 
-        if (!isAdmin && target.professional_id !== user.id) {
-          throw new Error('Você só pode cancelar suas próprias reservas.');
+        if (
+          !isAdmin &&
+          target.professional_id !== user.id
+        ) {
+          throw new Error(
+            'Você só pode cancelar suas próprias reservas.'
+          );
         }
 
         if (!isAdmin) {
-          const bookingStartTime = new Date(`${target.booking_date}T${target.start_time.toString().padStart(2, '0')}:00:00`);
-          const hoursDiff = differenceInHours(bookingStartTime, new Date());
+          const bookingStartTime =
+            new Date(
+              `${target.booking_date}T` +
+              `${target.start_time
+                .toString()
+                .padStart(2, '0')}:00:00`
+            );
+
+          const hoursDiff =
+            differenceInHours(
+              bookingStartTime,
+              new Date()
+            );
+
           if (hoursDiff < 24) {
-            throw new Error('Cancelamentos só podem ser realizados com no mínimo 24h de antecedência do horário agendado.');
+            throw new Error(
+              'Cancelamentos só podem ser realizados com no mínimo 24h de antecedência do horário agendado.'
+            );
           }
         }
 
-        const { error: updateErr } = await supabase
+        const {
+          error: updateErr
+        } = await supabase
           .from('bookings')
           .update({
             payment_status: 'CANCELLED',
@@ -543,39 +829,78 @@ export const bookingService = {
           })
           .eq('id', bookingId);
 
-        if (updateErr) throw updateErr;
+        if (updateErr) {
+          throw updateErr;
+        }
 
-        await supabase.from('audit_logs').insert({
-          user_id: user.id,
-          user_name: user.name,
-          action: 'Cancelamento de Reserva',
-          details: `Reserva ${bookingId} (${target.room_id}, ${target.booking_date}) foi cancelada.`
-        });
+        await supabase
+          .from('audit_logs')
+          .insert({
+            user_id: user.id,
+            user_name: user.name,
+            action: 'Cancelamento de Reserva',
+            details:
+              `Reserva ${bookingId} ` +
+              `(${target.room_id}, ${target.booking_date}) ` +
+              `foi cancelada.`
+          });
 
         return;
+
       } catch (err: any) {
-        throw new Error(translateSupabaseError(err));
+        throw new Error(
+          translateSupabaseError(err)
+        );
       }
     }
 
     const bookings = getStoredBookings();
-    const index = bookings.findIndex(b => b.id === bookingId);
-    if (index === -1) throw new Error('Reserva não encontrada.');
+
+    const index = bookings.findIndex(
+      b => b.id === bookingId
+    );
+
+    if (index === -1) {
+      throw new Error(
+        'Reserva não encontrada.'
+      );
+    }
 
     const target = bookings[index];
 
-    if (!isAdmin && target.userId !== user.id) {
-      throw new Error('Você só pode cancelar suas próprias reservas.');
+    if (
+      !isAdmin &&
+      target.userId !== user.id
+    ) {
+      throw new Error(
+        'Você só pode cancelar suas próprias reservas.'
+      );
     }
 
     if (!isAdmin) {
       const config = getSystemConfig();
-      const limitHours = config.cancellationLimitHours ?? 24;
-      const bookingStartTime = new Date(`${target.date}T${target.hour.toString().padStart(2, '0')}:00:00`);
-      const hoursDiff = differenceInHours(bookingStartTime, new Date());
+
+      const limitHours =
+        config.cancellationLimitHours ?? 24;
+
+      const bookingStartTime =
+        new Date(
+          `${target.date}T` +
+          `${target.hour
+            .toString()
+            .padStart(2, '0')}:00:00`
+        );
+
+      const hoursDiff =
+        differenceInHours(
+          bookingStartTime,
+          new Date()
+        );
 
       if (hoursDiff < limitHours) {
-        throw new Error(`Cancelamentos só podem ser realizados com no mínimo ${limitHours}h de antecedência do horário agendado.`);
+        throw new Error(
+          `Cancelamentos só podem ser realizados com no mínimo ${limitHours}h de antecedência do horário agendado.`
+        );
       }
     }
 
@@ -590,82 +915,134 @@ export const bookingService = {
       user.id,
       user.name,
       'Cancelamento de Reserva',
-      `Reserva ${bookingId} (${target.roomId}, ${target.date}) foi cancelada.`
+      `Reserva ${bookingId} ` +
+      `(${target.roomId}, ${target.date}) ` +
+      `foi cancelada.`
     );
   },
 
-  // Atualização do status de pagamento (ex: marcar como "Pago")
+  // Atualização do status de pagamento
   updatePaymentStatus: async (params: {
     bookingId: string;
     newStatus: PaymentStatus;
-    adminUser: { id: string; name: string };
+    adminUser: {
+      id: string;
+      name: string;
+    };
     paidNotes?: string;
   }): Promise<Booking> => {
+
     if (isSupabaseConfigured) {
       try {
         const payload: any = {
           payment_status: params.newStatus,
           paid_notes: params.paidNotes,
           paid_by_admin: params.adminUser.name,
-          paid_at: params.newStatus === 'PAID' ? new Date().toISOString() : null
+          paid_at:
+            params.newStatus === 'PAID'
+              ? new Date().toISOString()
+              : null
         };
 
-        const { data: updated, error } = await supabase
+        const {
+          data: updated,
+          error
+        } = await supabase
           .from('bookings')
           .update(payload)
           .eq('id', params.bookingId)
-          .select('*, clients(full_name), profiles:professional_id(full_name, email)')
+          .select(
+            '*, clients(full_name), profiles:professional_id(full_name, email)'
+          )
           .single();
 
-        if (error) throw error;
-
-        // Se marcado como pago, insere registro em public.payments
-        if (params.newStatus === 'PAID' && updated) {
-          await supabase.from('payments').insert({
-            booking_id: updated.id,
-            professional_id: updated.professional_id,
-            amount: updated.total_amount,
-            payment_date: new Date().toISOString().split('T')[0],
-            status: 'PAID',
-            notes: params.paidNotes || 'Pagamento confirmado pelo administrador',
-            created_by: params.adminUser.name
-          });
+        if (error) {
+          throw error;
         }
 
-        await supabase.from('audit_logs').insert({
-          user_id: params.adminUser.id,
-          user_name: params.adminUser.name,
-          action: 'Controle Financeiro / Pagamento',
-          details: `Reserva ${params.bookingId} alterada para status: ${params.newStatus}.`
-        });
+        if (
+          params.newStatus === 'PAID' &&
+          updated
+        ) {
+          await supabase
+            .from('payments')
+            .insert({
+              booking_id: updated.id,
+              professional_id: updated.professional_id,
+              amount: updated.total_amount,
+              payment_date:
+                new Date()
+                  .toISOString()
+                  .split('T')[0],
+              status: 'PAID',
+              notes:
+                params.paidNotes ||
+                'Pagamento confirmado pelo administrador',
+              created_by:
+                params.adminUser.name
+            });
+        }
 
-        return mapDbBookingToBooking(updated);
+        await supabase
+          .from('audit_logs')
+          .insert({
+            user_id: params.adminUser.id,
+            user_name: params.adminUser.name,
+            action: 'Controle Financeiro / Pagamento',
+            details:
+              `Reserva ${params.bookingId} ` +
+              `alterada para status: ` +
+              `${params.newStatus}.`
+          });
+
+        return mapDbBookingToBooking(
+          updated
+        );
+
       } catch (err: any) {
-        throw new Error(translateSupabaseError(err));
+        throw new Error(
+          translateSupabaseError(err)
+        );
       }
     }
 
     const bookings = getStoredBookings();
-    const index = bookings.findIndex(b => b.id === params.bookingId);
-    if (index === -1) throw new Error('Reserva não encontrada.');
+
+    const index = bookings.findIndex(
+      b => b.id === params.bookingId
+    );
+
+    if (index === -1) {
+      throw new Error(
+        'Reserva não encontrada.'
+      );
+    }
 
     const target = bookings[index];
+
     const updated: Booking = {
       ...target,
       paymentStatus: params.newStatus,
-      paidAt: params.newStatus === 'PAID' ? new Date().toISOString() : undefined,
+      paidAt:
+        params.newStatus === 'PAID'
+          ? new Date().toISOString()
+          : undefined,
       paidNotes: params.paidNotes,
-      paidByAdmin: params.adminUser.name
+      paidByAdmin:
+        params.adminUser.name
     };
 
     bookings[index] = updated;
+
     saveStoredBookings(bookings);
 
     addAuditLog(
       params.adminUser.id,
       params.adminUser.name,
       'Controle Financeiro / Pagamento',
-      `Reserva ${params.bookingId} (${target.userName}) alterada para status: ${params.newStatus}.`
+      `Reserva ${params.bookingId} ` +
+      `(${target.userName}) alterada ` +
+      `para status: ${params.newStatus}.`
     );
 
     return updated;
@@ -675,17 +1052,32 @@ export const bookingService = {
   getBlockedSlots: async (): Promise<BlockedSlot[]> => {
     if (isSupabaseConfigured) {
       try {
-        const { data, error } = await supabase
+        const {
+          data,
+          error
+        } = await supabase
           .from('blocked_slots')
           .select('*')
-          .order('blocked_date', { ascending: true });
+          .order(
+            'blocked_date',
+            { ascending: true }
+          );
 
-        if (error) throw error;
-        if (data) {
-          return data.map(mapDbBlockToBlockedSlot);
+        if (error) {
+          throw error;
         }
+
+        if (data) {
+          return data.map(
+            mapDbBlockToBlockedSlot
+          );
+        }
+
       } catch (err) {
-        console.warn('Erro ao carregar bloqueios do Supabase, usando local:', err);
+        console.warn(
+          'Erro ao carregar bloqueios do Supabase, usando local:',
+          err
+        );
       }
     }
 
@@ -693,13 +1085,32 @@ export const bookingService = {
   },
 
   createBlockedSlot: async (
-    slotData: Omit<BlockedSlot, 'id' | 'createdAt'>,
-    adminUser: { id: string; name: string }
+    slotData: Omit<
+      BlockedSlot,
+      'id' | 'createdAt'
+    >,
+    adminUser: {
+      id: string;
+      name: string;
+    }
   ): Promise<BlockedSlot> => {
+
     if (slotData.date) {
-      const [y, m, d] = slotData.date.split('-').map(Number);
-      if (new Date(y, m - 1, d).getDay() === 0) {
-        throw new Error('As salas já não são utilizadas aos domingos.');
+      const [y, m, d] =
+        slotData.date
+          .split('-')
+          .map(Number);
+
+      if (
+        new Date(
+          y,
+          m - 1,
+          d
+        ).getDay() === 0
+      ) {
+        throw new Error(
+          'As salas já não são utilizadas aos domingos.'
+        );
       }
     }
 
@@ -714,67 +1125,123 @@ export const bookingService = {
           created_by: adminUser.name
         };
 
-        const { data: created, error } = await supabase
+        const {
+          data: created,
+          error
+        } = await supabase
           .from('blocked_slots')
           .insert(payload)
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
 
-        await supabase.from('audit_logs').insert({
-          user_id: adminUser.id,
-          user_name: adminUser.name,
-          action: 'Bloqueio de Horário',
-          details: `Bloqueio criado para ${slotData.roomId} em ${slotData.date} (${slotData.startHour}h-${slotData.endHour}h): ${slotData.reason}`
-        });
+        await supabase
+          .from('audit_logs')
+          .insert({
+            user_id: adminUser.id,
+            user_name: adminUser.name,
+            action: 'Bloqueio de Horário',
+            details:
+              `Bloqueio criado para ` +
+              `${slotData.roomId} em ` +
+              `${slotData.date} ` +
+              `(${slotData.startHour}h-${slotData.endHour}h): ` +
+              `${slotData.reason}`
+          });
 
-        return mapDbBlockToBlockedSlot(created);
+        return mapDbBlockToBlockedSlot(
+          created
+        );
+
       } catch (err: any) {
-        throw new Error(translateSupabaseError(err));
+        throw new Error(
+          translateSupabaseError(err)
+        );
       }
     }
 
-    const blocks = getStoredBlockedSlots();
+    const blocks =
+      getStoredBlockedSlots();
+
     const newBlock: BlockedSlot = {
       ...slotData,
       id: 'blk-' + Date.now(),
-      createdAt: new Date().toISOString()
+      createdAt:
+        new Date().toISOString()
     };
 
-    saveStoredBlockedSlots([newBlock, ...blocks]);
+    saveStoredBlockedSlots([
+      newBlock,
+      ...blocks
+    ]);
 
     addAuditLog(
       adminUser.id,
       adminUser.name,
       'Bloqueio de Horário',
-      `Bloqueio criado para ${slotData.roomId} em ${slotData.date} (${slotData.startHour}h-${slotData.endHour}h): ${slotData.reason}`
+      `Bloqueio criado para ` +
+      `${slotData.roomId} em ` +
+      `${slotData.date} ` +
+      `(${slotData.startHour}h-${slotData.endHour}h): ` +
+      `${slotData.reason}`
     );
 
     return newBlock;
   },
 
-  deleteBlockedSlot: async (blockId: string, adminUser: { id: string; name: string }): Promise<void> => {
+  deleteBlockedSlot: async (
+    blockId: string,
+    adminUser: {
+      id: string;
+      name: string;
+    }
+  ): Promise<void> => {
+
     if (isSupabaseConfigured) {
       try {
-        const { error } = await supabase.from('blocked_slots').delete().eq('id', blockId);
-        if (error) throw error;
+        const { error } =
+          await supabase
+            .from('blocked_slots')
+            .delete()
+            .eq('id', blockId);
 
-        await supabase.from('audit_logs').insert({
-          user_id: adminUser.id,
-          user_name: adminUser.name,
-          action: 'Remoção de Bloqueio',
-          details: `Bloqueio ${blockId} foi desativado.`
-        });
+        if (error) {
+          throw error;
+        }
+
+        await supabase
+          .from('audit_logs')
+          .insert({
+            user_id: adminUser.id,
+            user_name: adminUser.name,
+            action: 'Remoção de Bloqueio',
+            details:
+              `Bloqueio ${blockId} foi desativado.`
+          });
+
         return;
+
       } catch (err: any) {
-        throw new Error(translateSupabaseError(err));
+        throw new Error(
+          translateSupabaseError(err)
+        );
       }
     }
 
-    const blocks = getStoredBlockedSlots();
-    const filtered = blocks.filter(b => b.id !== blockId);
-    saveStoredBlockedSlots(filtered);
+    const blocks =
+      getStoredBlockedSlots();
+
+    const filtered =
+      blocks.filter(
+        b => b.id !== blockId
+      );
+
+    saveStoredBlockedSlots(
+      filtered
+    );
 
     addAuditLog(
       adminUser.id,
@@ -788,20 +1255,38 @@ export const bookingService = {
   getRooms: async (): Promise<Room[]> => {
     if (isSupabaseConfigured) {
       try {
-        const { data, error } = await supabase
+        const {
+          data,
+          error
+        } = await supabase
           .from('rooms')
           .select('*')
-          .order('id', { ascending: true });
+          .order(
+            'id',
+            { ascending: true }
+          );
 
-        if (!error && data && data.length > 0) {
-          return data.map(mapDbRoomToRoom);
+        if (
+          !error &&
+          data &&
+          data.length > 0
+        ) {
+          return data.map(
+            mapDbRoomToRoom
+          );
         }
+
       } catch (e) {
-        console.warn('Erro ao buscar salas no Supabase, usando local:', e);
+        console.warn(
+          'Erro ao buscar salas no Supabase, usando local:',
+          e
+        );
       }
     }
 
-    const config = getSystemConfig();
+    const config =
+      getSystemConfig();
+
     return config.rooms;
   },
 
@@ -809,48 +1294,114 @@ export const bookingService = {
     roomId: RoomId,
     hourlyRate: number,
     dailyRate: number,
-    adminUser: { id: string; name: string },
+    adminUser: {
+      id: string;
+      name: string;
+    },
     morningRate?: number,
     afternoonRate?: number,
     nightRate?: number
   ): Promise<void> => {
+
     if (isSupabaseConfigured) {
       try {
         const updatePayload: any = {
           hourly_rate: hourlyRate,
           period_rate: dailyRate
         };
-        if (morningRate !== undefined) updatePayload.morning_rate = morningRate;
-        if (afternoonRate !== undefined) updatePayload.afternoon_rate = afternoonRate;
-        if (nightRate !== undefined) updatePayload.night_rate = nightRate;
 
-        const { error } = await supabase
-          .from('rooms')
-          .update(updatePayload)
-          .eq('id', roomId);
+        if (
+          morningRate !== undefined
+        ) {
+          updatePayload.morning_rate =
+            morningRate;
+        }
 
-        if (error) throw error;
+        if (
+          afternoonRate !== undefined
+        ) {
+          updatePayload.afternoon_rate =
+            afternoonRate;
+        }
 
-        await supabase.from('audit_logs').insert({
-          user_id: adminUser.id,
-          user_name: adminUser.name,
-          action: 'Alteração de Preço',
-          details: `Novos valores para ${roomId}: Hora R$ ${hourlyRate.toFixed(2)} | Manhã R$ ${(morningRate || 150).toFixed(2)} | Tarde R$ ${(afternoonRate || 180).toFixed(2)} | Noite R$ ${(nightRate || 130).toFixed(2)}`
-        });
+        if (
+          nightRate !== undefined
+        ) {
+          updatePayload.night_rate =
+            nightRate;
+        }
+
+        const { error } =
+          await supabase
+            .from('rooms')
+            .update(updatePayload)
+            .eq('id', roomId);
+
+        if (error) {
+          throw error;
+        }
+
+        await supabase
+          .from('audit_logs')
+          .insert({
+            user_id: adminUser.id,
+            user_name: adminUser.name,
+            action: 'Alteração de Preço',
+            details:
+              `Novos valores para ${roomId}: ` +
+              `Hora R$ ${hourlyRate.toFixed(2)} | ` +
+              `Manhã R$ ${(morningRate || 150).toFixed(2)} | ` +
+              `Tarde R$ ${(afternoonRate || 180).toFixed(2)} | ` +
+              `Noite R$ ${(nightRate || 130).toFixed(2)}`
+          });
+
       } catch (err: any) {
-        throw new Error(translateSupabaseError(err));
+        throw new Error(
+          translateSupabaseError(err)
+        );
       }
     }
 
-    const config = getSystemConfig();
-    const room = config.rooms.find(r => r.id === roomId);
-    if (!room) throw new Error('Sala não encontrada.');
+    const config =
+      getSystemConfig();
 
-    room.hourlyRate = hourlyRate;
-    room.dailyRate = dailyRate;
-    if (morningRate !== undefined) room.morningRate = morningRate;
-    if (afternoonRate !== undefined) room.afternoonRate = afternoonRate;
-    if (nightRate !== undefined) room.nightRate = nightRate;
+    const room =
+      config.rooms.find(
+        r => r.id === roomId
+      );
+
+    if (!room) {
+      throw new Error(
+        'Sala não encontrada.'
+      );
+    }
+
+    room.hourlyRate =
+      hourlyRate;
+
+    room.dailyRate =
+      dailyRate;
+
+    if (
+      morningRate !== undefined
+    ) {
+      room.morningRate =
+        morningRate;
+    }
+
+    if (
+      afternoonRate !== undefined
+    ) {
+      room.afternoonRate =
+        afternoonRate;
+    }
+
+    if (
+      nightRate !== undefined
+    ) {
+      room.nightRate =
+        nightRate;
+    }
 
     saveSystemConfig(config);
 
@@ -858,65 +1409,135 @@ export const bookingService = {
       adminUser.id,
       adminUser.name,
       'Alteração de Preço',
-      `Novos valores para ${roomId}: Hora R$ ${hourlyRate.toFixed(2)} | Manhã R$ ${(room.morningRate || 150).toFixed(2)} | Tarde R$ ${(room.afternoonRate || 180).toFixed(2)} | Noite R$ ${(room.nightRate || 130).toFixed(2)}`
+      `Novos valores para ${roomId}: ` +
+      `Hora R$ ${hourlyRate.toFixed(2)} | ` +
+      `Manhã R$ ${(room.morningRate || 150).toFixed(2)} | ` +
+      `Tarde R$ ${(room.afternoonRate || 180).toFixed(2)} | ` +
+      `Noite R$ ${(room.nightRate || 130).toFixed(2)}`
     );
   },
 
   // Helpers de Configuração Global
-  getCurrentHourlyRate: async (roomId: RoomId = 'Sala 1'): Promise<number> => {
+  getCurrentHourlyRate: async (
+    roomId: RoomId = 'Sala 1'
+  ): Promise<number> => {
+
     if (isSupabaseConfigured) {
       try {
-        const { data } = await supabase
-          .from('rooms')
-          .select('hourly_rate')
-          .eq('id', roomId)
-          .maybeSingle();
-        if (data?.hourly_rate) return Number(data.hourly_rate);
+        const { data } =
+          await supabase
+            .from('rooms')
+            .select('hourly_rate')
+            .eq('id', roomId)
+            .maybeSingle();
+
+        if (data?.hourly_rate) {
+          return Number(
+            data.hourly_rate
+          );
+        }
+
       } catch (e) {}
     }
-    const config = getSystemConfig();
-    const room = config.rooms.find(r => r.id === roomId);
-    return room ? room.hourlyRate : 40.0;
+
+    const config =
+      getSystemConfig();
+
+    const room =
+      config.rooms.find(
+        r => r.id === roomId
+      );
+
+    return room
+      ? room.hourlyRate
+      : 40.0;
   },
 
-  getUnblockedHolidays: async (): Promise<string[]> => {
-    const config = getSystemConfig();
-    return config.unblockedHolidays || [];
-  },
+  getUnblockedHolidays:
+    async (): Promise<string[]> => {
+      const config =
+        getSystemConfig();
 
-  isGlobalHolidaysAllowed: async (): Promise<boolean> => {
-    const config = getSystemConfig();
-    return !!config.allowHolidaysGlobal;
-  },
+      return config.unblockedHolidays || [];
+    },
 
-  toggleGlobalHolidays: async (): Promise<boolean> => {
-    const config = getSystemConfig();
-    config.allowHolidaysGlobal = !config.allowHolidaysGlobal;
-    saveSystemConfig(config);
-    return config.allowHolidaysGlobal;
-  },
+  isGlobalHolidaysAllowed:
+    async (): Promise<boolean> => {
+      const config =
+        getSystemConfig();
 
-  toggleHolidayStatus: async (dateKey: string): Promise<string[]> => {
-    const config = getSystemConfig();
-    const current = config.unblockedHolidays || [];
-    const newList = current.includes(dateKey)
-      ? current.filter(d => d !== dateKey)
-      : [...current, dateKey];
+      return !!config.allowHolidaysGlobal;
+    },
 
-    config.unblockedHolidays = newList;
-    saveSystemConfig(config);
-    return newList;
-  },
+  toggleGlobalHolidays:
+    async (): Promise<boolean> => {
+      const config =
+        getSystemConfig();
 
-  deleteBookingsByUserId: async (userId: string): Promise<void> => {
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.from('bookings').delete().eq('professional_id', userId);
-      } catch (e) {}
+      config.allowHolidaysGlobal =
+        !config.allowHolidaysGlobal;
+
+      saveSystemConfig(config);
+
+      return config.allowHolidaysGlobal;
+    },
+
+  toggleHolidayStatus:
+    async (
+      dateKey: string
+    ): Promise<string[]> => {
+
+      const config =
+        getSystemConfig();
+
+      const current =
+        config.unblockedHolidays || [];
+
+      const newList =
+        current.includes(dateKey)
+          ? current.filter(
+              d => d !== dateKey
+            )
+          : [
+              ...current,
+              dateKey
+            ];
+
+      config.unblockedHolidays =
+        newList;
+
+      saveSystemConfig(config);
+
+      return newList;
+    },
+
+  deleteBookingsByUserId:
+    async (
+      userId: string
+    ): Promise<void> => {
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('bookings')
+            .delete()
+            .eq(
+              'professional_id',
+              userId
+            );
+        } catch (e) {}
+      }
+
+      const bookings =
+        getStoredBookings();
+
+      const filtered =
+        bookings.filter(
+          b => b.userId !== userId
+        );
+
+      saveStoredBookings(
+        filtered
+      );
     }
-    const bookings = getStoredBookings();
-    const filtered = bookings.filter(b => b.userId !== userId);
-    saveStoredBookings(filtered);
-  }
 };
-
