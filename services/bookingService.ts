@@ -1543,20 +1543,10 @@ export const bookingService = {
   getBookingsByDate,
   getBookingsByRoom,
 
-  getBlockedSlots,
-  getRooms,
-  getUnblockedHolidays,
-  isGlobalHolidaysAllowed,
-
   getPeriodConfig,
   checkConflict,
   createBooking,
   cancelBooking,
-
-  updatePaymentStatus,
-  deleteBookingsByUserId,
-  getBookingById,
-  updateBooking,
 
   getBookingsByMonth,
   calculateBookingTotals,
