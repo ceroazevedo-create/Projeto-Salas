@@ -464,10 +464,6 @@ export async function checkConflict(
   endHour: number,
   excludeBookingId?: string
 ): Promise<boolean> {
-  /*
-   * Primeiro verificamos bloqueios administrativos.
-   */
-
   const blockedConflict =
     await checkBlockedSlotConflict(
       roomId,
@@ -479,10 +475,6 @@ export async function checkConflict(
   if (blockedConflict) {
     return true;
   }
-
-  /*
-   * Depois verificamos reservas existentes.
-   */
 
   if (isSupabaseConfigured) {
     const { data, error } = await supabase
@@ -530,10 +522,6 @@ export async function checkConflict(
       );
     }
   }
-
-  /*
-   * Fallback local.
-   */
 
   const localBookings =
     getStoredBookings();
@@ -653,10 +641,6 @@ export async function createBooking(
   const isPeriod =
     params.type === 'PERIOD';
 
-  /*
-   * Determina horário e duração.
-   */
-
   let startHour: number;
   let endHour: number;
   let duration: number;
@@ -695,10 +679,6 @@ export async function createBooking(
       startHour + duration;
   }
 
-  /*
-   * Validação do horário de funcionamento.
-   */
-
   if (
     startHour < 7 ||
     endHour > 22 ||
@@ -708,10 +688,6 @@ export async function createBooking(
       'A reserva deve estar entre 07:00 e 22:00.'
     );
   }
-
-  /*
-   * Busca a tarifa da sala.
-   */
 
   const room =
     await getRoomRate(
@@ -732,11 +708,6 @@ export async function createBooking(
         params.periodShift!
       );
 
-    /*
-     * Se não houver tarifa específica
-     * cadastrada para o período, usamos
-     * a tarifa horária × duração.
-     */
     totalAmount =
       periodRate > 0
         ? periodRate
@@ -745,10 +716,6 @@ export async function createBooking(
     totalAmount =
       hourlyRate * duration;
   }
-
-  /*
-   * Verifica conflitos ANTES de inserir.
-   */
 
   const hasConflict =
     await checkConflict(
@@ -763,27 +730,6 @@ export async function createBooking(
       'Este horário já está reservado ou bloqueado para esta sala.'
     );
   }
-
-  /*
-   * =====================================================
-   * PERSISTÊNCIA NO SUPABASE
-   *
-   * ATENÇÃO:
-   * Este é o schema REAL da tabela bookings.
-   *
-   * NÃO usar:
-   *   user_id
-   *   date
-   *   hour
-   *   price_at_booking
-   *
-   * Usar:
-   *   professional_id
-   *   booking_date
-   *   start_time
-   *   end_time
-   * =====================================================
-   */
 
   let createdBookingId =
     'local-' + Date.now();
@@ -844,13 +790,6 @@ export async function createBooking(
       .select('*')
       .maybeSingle();
 
-    /*
-     * NÃO engolir erro.
-     *
-     * Se o Supabase rejeitar a reserva,
-     * não criamos uma falsa reserva local.
-     */
-
     if (insertError) {
       console.error(
         'Erro ao criar reserva no Supabase:',
@@ -872,13 +811,6 @@ export async function createBooking(
 
     createdBookingId =
       String(created.id);
-
-    /*
-     * Auditoria.
-     *
-     * Se a auditoria falhar, NÃO
-     * invalidamos a reserva.
-     */
 
     try {
       await supabase
@@ -925,10 +857,6 @@ export async function createBooking(
       );
     }
   }
-
-  /*
-   * Monta objeto utilizado pelo frontend.
-   */
 
   const newBooking: Booking = {
     id:
@@ -988,13 +916,6 @@ export async function createBooking(
     createdAt:
       new Date().toISOString(),
   };
-
-  /*
-   * Salva no cache local.
-   *
-   * Isso acontece SOMENTE depois de a
-   * criação remota ter dado certo.
-   */
 
   const existing =
     getStoredBookings();
@@ -1608,3 +1529,14 @@ export const getBookings =
 
 export const getUserBookings =
   getBookingsByUserId;
+
+/* =========================================================
+   EXPORTAÇÃO DO SERVIÇO DE RESERVAS
+   ========================================================= */
+
+export const bookingService = {
+  getBookings,
+  getUserBookings,
+  getBookingsByMonth,
+  calculateBookingTotals,
+};
