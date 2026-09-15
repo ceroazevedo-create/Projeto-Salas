@@ -963,9 +963,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser }) => {
                       <td className="py-4 px-6 font-bold text-teal-700">{b.roomId}</td>
                       <td className="py-4 px-6 font-black text-gray-800">{b.userName}</td>
                       <td className="py-4 px-6 font-bold text-gray-600">
-                        {b.type === 'PERIOD' ? '07:00 - 22:00' : `${b.hour}:00 - ${b.endTimeHour}:00`}
+                        {`${b.hour.toString().padStart(2, '0')}:00 - ${b.endTimeHour.toString().padStart(2, '0')}:00`}
                       </td>
-                      <td className="py-4 px-6 text-gray-500">{b.durationHours}h</td>
+                      <td className="py-4 px-6 text-gray-500">
+                        {b.durationHours}h {b.type === 'PERIOD' ? `(${b.periodName ? `Período ${b.periodName}` : 'Período'})` : ''}
+                      </td>
                       <td className="py-4 px-6 text-right font-black text-gray-900">
                         R$ {b.totalAmount.toFixed(2)}
                       </td>

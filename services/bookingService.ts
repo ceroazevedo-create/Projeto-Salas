@@ -1,4 +1,4 @@
-import { Booking, RoomId, BookingType, PaymentStatus, BlockedSlot, SystemConfig, Room } from '../types';
+import { Booking, RoomId, BookingType, PaymentStatus, BlockedSlot, SystemConfig, Room, PeriodShift } from '../types';
 import { 
   getStoredBookings, saveStoredBookings, 
   getStoredBlockedSlots, saveStoredBlockedSlots, 
@@ -6,7 +6,7 @@ import {
 } from './storageService';
 import { differenceInHours } from 'date-fns';
 import { supabase, isSupabaseConfigured, translateSupabaseError } from './supabase';
-import { getClosingHourForDate } from '../constants';
+import { getClosingHourForDate, SATURDAY_HOURS_END, INITIAL_PERIOD_RATES, getPeriodConfig } from '../constants';
 
 function mapDbBookingToBooking(b: any, profilesMap?: Map<string, any>): Booking {
   const clientObj = Array.isArray(b.clients) ? b.clients[0] : b.clients;
@@ -35,6 +35,8 @@ function mapDbBookingToBooking(b: any, profilesMap?: Map<string, any>): Booking 
     durationHours: duration,
     endTimeHour: endHour,
     type: type,
+    periodShift: b.period_shift || b.periodShift || undefined,
+    periodName: b.period_name || b.periodName || undefined,
     priceAtBooking: price,
     totalAmount: total,
     paymentStatus: paymentStatus,
@@ -66,6 +68,9 @@ function mapDbRoomToRoom(r: any): Room {
     description: r.description || '',
     hourlyRate: Number(r.hourly_rate || 40.0),
     dailyRate: Number(r.period_rate || 350.0),
+    morningRate: Number(r.morning_rate || r.morningRate || INITIAL_PERIOD_RATES.MORNING),
+    afternoonRate: Number(r.afternoon_rate || r.afternoonRate || INITIAL_PERIOD_RATES.AFTERNOON),
+    nightRate: Number(r.night_rate || r.nightRate || INITIAL_PERIOD_RATES.NIGHT),
     status: (r.status || 'ACTIVE') as 'ACTIVE' | 'MAINTENANCE',
     openHour: Number(r.opening_time || 7),
     closeHour: Number(r.closing_time || 22),
@@ -255,24 +260,13 @@ export const bookingService = {
             const bEnd = Number(b.end_time_hour || b.end_time || (bStart + bDuration));
             const bType = b.type || b.booking_type;
 
-            if (bType === 'PERIOD') {
-              return { 
-                hasConflict: true, 
-                reason: `A ${roomId} já possui locação de período integral neste dia.` 
-              };
-            }
-
-            if (startHour <= 7 && endHour >= 22) {
-              return { 
-                hasConflict: true, 
-                reason: `Não é possível alugar o período integral pois já existem horários reservados nesta sala neste dia.` 
-              };
-            }
-
             if (Math.max(startHour, bStart) < Math.min(endHour, bEnd)) {
+              const periodLabel = b.period_name || b.periodName 
+                ? ` (Período da ${b.period_name || b.periodName})` 
+                : (bType === 'PERIOD' && (bEnd - bStart >= 14) ? ' (Período Integral)' : '');
               return { 
                 hasConflict: true, 
-                reason: `O horário das ${bStart}:00 às ${bEnd}:00 já está reservado nesta sala.` 
+                reason: `O horário das ${bStart}:00 às ${bEnd}:00${periodLabel} já está reservado nesta sala.` 
               };
             }
           }
@@ -310,24 +304,13 @@ export const bookingService = {
     for (const b of sameDayRoomBookings) {
       const bEnd = b.endTimeHour || (b.hour + (b.durationHours || 1));
 
-      if (b.type === 'PERIOD') {
-        return { 
-          hasConflict: true, 
-          reason: `A ${roomId} já possui locação de período integral neste dia.` 
-        };
-      }
-
-      if (startHour <= 7 && endHour >= 22) {
-        return { 
-          hasConflict: true, 
-          reason: `Não é possível alugar o período integral pois já existem horários reservados nesta sala neste dia.` 
-        };
-      }
-
       if (Math.max(startHour, b.hour) < Math.min(endHour, bEnd)) {
+        const periodLabel = b.periodName 
+          ? ` (Período da ${b.periodName})` 
+          : (b.type === 'PERIOD' && (bEnd - b.hour >= 14) ? ' (Período Integral)' : '');
         return { 
           hasConflict: true, 
-          reason: `O horário das ${b.hour}:00 às ${bEnd}:00 já está reservado nesta sala.` 
+          reason: `O horário das ${b.hour}:00 às ${bEnd}:00${periodLabel} já está reservado nesta sala.` 
         };
       }
     }
@@ -347,10 +330,15 @@ export const bookingService = {
     hour: number;
     durationHours?: number;
     type?: BookingType;
+    periodShift?: PeriodShift;
+    periodName?: string;
     notes?: string;
   }): Promise<Booking> => {
     let hourlyRate = 40.0;
     let periodRate = 350.0;
+    let morningRate = INITIAL_PERIOD_RATES.MORNING;
+    let afternoonRate = INITIAL_PERIOD_RATES.AFTERNOON;
+    let nightRate = INITIAL_PERIOD_RATES.NIGHT;
     let openHour = 7;
     let closeHour = 22;
 
@@ -366,6 +354,9 @@ export const bookingService = {
         if (roomData) {
           hourlyRate = Number(roomData.hourly_rate);
           periodRate = Number(roomData.period_rate);
+          if (roomData.morning_rate) morningRate = Number(roomData.morning_rate);
+          if (roomData.afternoon_rate) afternoonRate = Number(roomData.afternoon_rate);
+          if (roomData.night_rate) nightRate = Number(roomData.night_rate);
           openHour = Number(roomData.opening_time);
           closeHour = Number(roomData.closing_time);
         }
@@ -378,23 +369,22 @@ export const bookingService = {
       if (room) {
         hourlyRate = room.hourlyRate;
         periodRate = room.dailyRate;
+        if (room.morningRate) morningRate = room.morningRate;
+        if (room.afternoonRate) afternoonRate = room.afternoonRate;
+        if (room.nightRate) nightRate = room.nightRate;
         openHour = room.openHour;
         closeHour = room.closeHour;
       }
     }
 
     const isPeriod = params.type === 'PERIOD';
-    // Se for sábado, o fechamento é às 14h
-    if (params.date) {
-      const closingForDate = getClosingHourForDate(params.date);
-      if (closingForDate > 0) {
-        closeHour = Math.min(closeHour, closingForDate);
-      }
-    }
+    const periodShift: PeriodShift = params.periodShift || 'MORNING';
+    const periodConf = getPeriodConfig(periodShift, params.date);
 
-    const startHour = isPeriod ? openHour : params.hour;
-    const duration = isPeriod ? (closeHour - openHour) : (params.durationHours || 1);
+    const startHour = isPeriod ? periodConf.startHour : params.hour;
+    const duration = isPeriod ? periodConf.duration : (params.durationHours || 1);
     const endHour = startHour + duration;
+    const periodName = params.periodName || periodConf.name;
 
     // 1. Validação estrita de conflito no frontend
     const conflict = await bookingService.checkConflict(params.roomId, params.date, startHour, endHour);
@@ -404,7 +394,21 @@ export const bookingService = {
 
     // 2. Cálculo financeiro com congelamento de valor
     const priceAtBooking = hourlyRate;
-    const totalAmount = isPeriod ? periodRate : (duration * hourlyRate);
+    let totalAmount = 0;
+    if (isPeriod) {
+      if (periodShift === 'MORNING') {
+        totalAmount = morningRate;
+      } else if (periodShift === 'AFTERNOON') {
+        const isSat = getClosingHourForDate(params.date) === SATURDAY_HOURS_END;
+        totalAmount = isSat ? Math.round(afternoonRate * (2 / 6)) : afternoonRate;
+      } else if (periodShift === 'NIGHT') {
+        totalAmount = nightRate;
+      } else {
+        totalAmount = periodRate;
+      }
+    } else {
+      totalAmount = duration * hourlyRate;
+    }
 
     // 3. Persistência no Supabase e Local
     let createdBookingId = 'bk-' + Date.now();
@@ -439,7 +443,7 @@ export const bookingService = {
             booking_type: isPeriod ? 'PERIOD' : 'HOURLY',
             total_hours: duration,
             hourly_rate: hourlyRate,
-            period_rate: periodRate,
+            period_rate: totalAmount,
             total_amount: totalAmount,
             payment_status: 'PENDING',
             status: 'confirmed',
@@ -462,7 +466,7 @@ export const bookingService = {
             user_id: params.userId,
             user_name: params.userName,
             action: 'Nova Reserva',
-            details: `Locação criada: ${params.roomId}, ${params.date} das ${startHour}:00 às ${endHour}:00 (Total: R$ ${totalAmount.toFixed(2)})`
+            details: `Locação criada: ${params.roomId}, ${params.date} das ${startHour}:00 às ${endHour}:00 (${isPeriod ? `Período da ${periodName}` : `${duration}h`}) (Total: R$ ${totalAmount.toFixed(2)})`
           });
         } catch {}
       } catch (err: any) {
@@ -483,6 +487,8 @@ export const bookingService = {
       durationHours: duration,
       endTimeHour: endHour,
       type: isPeriod ? 'PERIOD' : 'HOURLY',
+      periodShift: isPeriod ? periodShift : undefined,
+      periodName: isPeriod ? periodName : undefined,
       priceAtBooking,
       totalAmount,
       paymentStatus: 'PENDING',
@@ -497,7 +503,7 @@ export const bookingService = {
       params.userId,
       params.userName,
       'Nova Reserva',
-      `Locação criada: ${params.roomId}, ${params.date} das ${startHour}:00 às ${endHour}:00 (Total: R$ ${totalAmount.toFixed(2)})`
+      `Locação criada: ${params.roomId}, ${params.date} das ${startHour}:00 às ${endHour}:00 (${isPeriod ? `Período da ${periodName}` : `${duration}h`}) (Total: R$ ${totalAmount.toFixed(2)})`
     );
 
     return newBooking;
@@ -803,16 +809,24 @@ export const bookingService = {
     roomId: RoomId,
     hourlyRate: number,
     dailyRate: number,
-    adminUser: { id: string; name: string }
+    adminUser: { id: string; name: string },
+    morningRate?: number,
+    afternoonRate?: number,
+    nightRate?: number
   ): Promise<void> => {
     if (isSupabaseConfigured) {
       try {
+        const updatePayload: any = {
+          hourly_rate: hourlyRate,
+          period_rate: dailyRate
+        };
+        if (morningRate !== undefined) updatePayload.morning_rate = morningRate;
+        if (afternoonRate !== undefined) updatePayload.afternoon_rate = afternoonRate;
+        if (nightRate !== undefined) updatePayload.night_rate = nightRate;
+
         const { error } = await supabase
           .from('rooms')
-          .update({
-            hourly_rate: hourlyRate,
-            period_rate: dailyRate
-          })
+          .update(updatePayload)
           .eq('id', roomId);
 
         if (error) throw error;
@@ -821,7 +835,7 @@ export const bookingService = {
           user_id: adminUser.id,
           user_name: adminUser.name,
           action: 'Alteração de Preço',
-          details: `Novos valores para ${roomId}: Hora R$ ${hourlyRate.toFixed(2)} | Período R$ ${dailyRate.toFixed(2)}`
+          details: `Novos valores para ${roomId}: Hora R$ ${hourlyRate.toFixed(2)} | Manhã R$ ${(morningRate || 150).toFixed(2)} | Tarde R$ ${(afternoonRate || 180).toFixed(2)} | Noite R$ ${(nightRate || 130).toFixed(2)}`
         });
       } catch (err: any) {
         throw new Error(translateSupabaseError(err));
@@ -834,6 +848,9 @@ export const bookingService = {
 
     room.hourlyRate = hourlyRate;
     room.dailyRate = dailyRate;
+    if (morningRate !== undefined) room.morningRate = morningRate;
+    if (afternoonRate !== undefined) room.afternoonRate = afternoonRate;
+    if (nightRate !== undefined) room.nightRate = nightRate;
 
     saveSystemConfig(config);
 
@@ -841,7 +858,7 @@ export const bookingService = {
       adminUser.id,
       adminUser.name,
       'Alteração de Preço',
-      `Novos valores para ${roomId}: Hora R$ ${hourlyRate.toFixed(2)} | Período R$ ${dailyRate.toFixed(2)}`
+      `Novos valores para ${roomId}: Hora R$ ${hourlyRate.toFixed(2)} | Manhã R$ ${(room.morningRate || 150).toFixed(2)} | Tarde R$ ${(room.afternoonRate || 180).toFixed(2)} | Noite R$ ${(room.nightRate || 130).toFixed(2)}`
     );
   },
 

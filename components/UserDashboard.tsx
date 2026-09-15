@@ -433,7 +433,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                         </span>
                       </div>
                       <p className="text-xs font-bold text-teal-700 mt-1">
-                        {format(parseISO(b.date), "dd/MM/yyyy", { locale: ptBR })} — {b.hour}:00 ({b.durationHours}h)
+                        {format(parseISO(b.date), "dd/MM/yyyy", { locale: ptBR })} — {b.hour}:00 às {b.endTimeHour}:00 ({b.durationHours}h{b.type === 'PERIOD' ? ` • ${b.periodName || 'Período'}` : ''})
                       </p>
                       {b.clientName && (
                         <p className="text-[11px] text-gray-500 mt-0.5">
@@ -559,10 +559,10 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                           {b.clientName || <span className="text-gray-400 italic">Geral / Não informado</span>}
                         </td>
                         <td className="py-4 px-6 font-bold text-gray-600">
-                          {b.type === 'PERIOD' ? '07:00 - 22:00' : `${b.hour}:00 - ${b.endTimeHour}:00`}
+                          {`${b.hour.toString().padStart(2, '0')}:00 - ${b.endTimeHour.toString().padStart(2, '0')}:00`}
                         </td>
                         <td className="py-4 px-6 text-gray-500">
-                          {b.durationHours}h {b.type === 'PERIOD' ? '(Período)' : ''}
+                          {b.durationHours}h {b.type === 'PERIOD' ? `(${b.periodName ? `Período ${b.periodName}` : 'Período'})` : ''}
                         </td>
                         <td className="py-4 px-6 font-black text-gray-900 text-right">
                           R$ {b.totalAmount.toFixed(2)}

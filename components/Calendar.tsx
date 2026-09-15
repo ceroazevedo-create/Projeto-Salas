@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Booking, RoomId, User, Client, BlockedSlot, BookingType, Room } from '../types';
+import { Booking, RoomId, User, Client, BlockedSlot, BookingType, Room, PeriodShift } from '../types';
 import { bookingService } from '../services/bookingService';
 import { clientService } from '../services/clientService';
-import { DAYS_OF_WEEK, HOLIDAYS, getClosingHourForDate, SATURDAY_HOURS_END } from '../constants';
+import { 
+  DAYS_OF_WEEK, HOLIDAYS, getClosingHourForDate, SATURDAY_HOURS_END,
+  BOOKING_PERIODS, getPeriodConfig, INITIAL_PERIOD_RATES 
+} from '../constants';
 import { 
   format, addDays, isSameDay, addWeeks, getDay, isBefore,
   endOfWeek, endOfMonth, eachDayOfInterval, isSameMonth, addMonths, isToday,
@@ -14,7 +17,8 @@ import { ptBR } from 'date-fns/locale/pt-BR';
 import { 
   ChevronLeft, ChevronRight, CheckCircle, Clock, 
   MapPin, AlertTriangle, User as UserIcon, Palmtree, 
-  ShieldAlert, Ban, Plus, X, Calendar as CalendarIcon, FileText
+  ShieldAlert, Ban, Plus, X, Calendar as CalendarIcon, FileText,
+  Sunrise, Sun, Moon
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { Button } from './Button';
@@ -45,6 +49,7 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
   const [bookingDate, setBookingDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [bookingStartHour, setBookingStartHour] = useState<number>(14);
   const [bookingType, setBookingType] = useState<BookingType>('HOURLY');
+  const [bookingPeriodShift, setBookingPeriodShift] = useState<PeriodShift>('MORNING');
   const [bookingDuration, setBookingDuration] = useState<number>(1);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [bookingNotes, setBookingNotes] = useState<string>('');
@@ -110,19 +115,32 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
     const check = async () => {
       setIsCheckingConflict(true);
       try {
-        const closingForDate = bookingDate ? getClosingHourForDate(bookingDate) : hoursEnd;
-        const effectiveClose = closingForDate > 0 ? closingForDate : hoursEnd;
-        const duration = bookingType === 'PERIOD' ? (effectiveClose - hoursStart) : bookingDuration;
-        const startH = bookingType === 'PERIOD' ? hoursStart : bookingStartHour;
-        const endH = startH + duration;
-
-        const result = await bookingService.checkConflict(
-          bookingRoom,
-          bookingDate,
-          startH,
-          endH
-        );
-        setConflictStatus(result);
+        if (bookingType === 'PERIOD') {
+          const periodConf = getPeriodConfig(bookingPeriodShift, bookingDate);
+          if (!periodConf.isAvailableOnDate) {
+            setConflictStatus({
+              hasConflict: true,
+              reason: 'O período da Noite não está disponível aos sábados (o atendimento encerra às 14:00).'
+            });
+            return;
+          }
+          const result = await bookingService.checkConflict(
+            bookingRoom,
+            bookingDate,
+            periodConf.startHour,
+            periodConf.endHour
+          );
+          setConflictStatus(result);
+        } else {
+          const endH = bookingStartHour + bookingDuration;
+          const result = await bookingService.checkConflict(
+            bookingRoom,
+            bookingDate,
+            bookingStartHour,
+            endH
+          );
+          setConflictStatus(result);
+        }
       } catch {
         setConflictStatus({ hasConflict: false });
       } finally {
@@ -131,7 +149,7 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
     };
 
     check();
-  }, [isBookingModalOpen, bookingRoom, bookingDate, bookingStartHour, bookingType, bookingDuration]);
+  }, [isBookingModalOpen, bookingRoom, bookingDate, bookingStartHour, bookingType, bookingDuration, bookingPeriodShift]);
 
   // Holiday check helper
   const getHolidayInfo = (date: Date) => {
@@ -189,6 +207,15 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
     const targetRoom = room || (selectedRoom === 'ALL' ? 'Sala 1' : selectedRoom);
     const formattedDate = format(date, 'yyyy-MM-dd');
 
+    // Pré-seleciona período inteligente com base na hora clicada
+    if (hour < 12) {
+      setBookingPeriodShift('MORNING');
+    } else if (hour < 18) {
+      setBookingPeriodShift('AFTERNOON');
+    } else {
+      setBookingPeriodShift(dayOfWeek === 6 ? 'MORNING' : 'NIGHT');
+    }
+
     setBookingRoom(targetRoom);
     setBookingDate(formattedDate);
     setBookingStartHour(hour);
@@ -213,8 +240,10 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
     setIsSubmitting(true);
     try {
       const selectedClient = myClients.find(c => c.id === selectedClientId);
-      const closingForDate = bookingDate ? getClosingHourForDate(bookingDate) : hoursEnd;
-      const effectiveClose = closingForDate > 0 ? closingForDate : hoursEnd;
+      const isPeriod = bookingType === 'PERIOD';
+      const periodConf = getPeriodConfig(bookingPeriodShift, bookingDate);
+      const startHour = isPeriod ? periodConf.startHour : bookingStartHour;
+      const durationHours = isPeriod ? periodConf.duration : bookingDuration;
 
       await bookingService.createBooking({
         userId: user.id,
@@ -224,9 +253,11 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
         clientName: selectedClient?.name || undefined,
         roomId: bookingRoom,
         date: bookingDate,
-        hour: bookingStartHour,
-        durationHours: bookingType === 'PERIOD' ? (effectiveClose - hoursStart) : bookingDuration,
+        hour: startHour,
+        durationHours: durationHours,
         type: bookingType,
+        periodShift: isPeriod ? bookingPeriodShift : undefined,
+        periodName: isPeriod ? periodConf.name : undefined,
         notes: bookingNotes
       });
 
@@ -263,12 +294,30 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
 
   // Calculate modal dynamic price
   const modalCalculatedPrice = useMemo(() => {
-    const room = rooms.find(r => r.id === bookingRoom) || { hourlyRate: 40, dailyRate: 350 };
+    const room = rooms.find(r => r.id === bookingRoom) || { 
+      hourlyRate: 40, 
+      dailyRate: 350,
+      morningRate: INITIAL_PERIOD_RATES.MORNING,
+      afternoonRate: INITIAL_PERIOD_RATES.AFTERNOON,
+      nightRate: INITIAL_PERIOD_RATES.NIGHT
+    };
+
     if (bookingType === 'PERIOD') {
-      return room.dailyRate;
+      if (bookingPeriodShift === 'MORNING') {
+        return room.morningRate || INITIAL_PERIOD_RATES.MORNING;
+      }
+      if (bookingPeriodShift === 'AFTERNOON') {
+        const isSat = getClosingHourForDate(bookingDate) === SATURDAY_HOURS_END;
+        const base = room.afternoonRate || INITIAL_PERIOD_RATES.AFTERNOON;
+        return isSat ? Math.round(base * (2 / 6)) : base;
+      }
+      if (bookingPeriodShift === 'NIGHT') {
+        return room.nightRate || INITIAL_PERIOD_RATES.NIGHT;
+      }
+      return room.dailyRate || 350;
     }
     return bookingDuration * room.hourlyRate;
-  }, [bookingRoom, bookingType, bookingDuration, rooms]);
+  }, [bookingRoom, bookingType, bookingPeriodShift, bookingDuration, bookingDate, rooms]);
 
   // Helper to check if a specific room + date + hour is booked or blocked
   const getSlotDetails = (dateStr: string, hour: number, roomId: RoomId) => {
@@ -286,7 +335,6 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
     // 2. Reserva existente
     const booking = bookings.find(b => {
       if (b.roomId !== roomId || b.date !== dateStr) return false;
-      if (b.type === 'PERIOD') return true; // cobre todo o dia
       const bEnd = b.endTimeHour || (b.hour + (b.durationHours || 1));
       return hour >= b.hour && hour < bEnd;
     });
@@ -416,7 +464,7 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
                       </span>
                     </div>
                     <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-white/20 whitespace-nowrap">
-                      {b.type === 'PERIOD' ? 'Período Integral' : `${hour}:00`}
+                      {b.type === 'PERIOD' ? (b.periodName ? `Período ${b.periodName}` : 'Período') : `${hour}:00`}
                     </span>
                   </div>
                 );
@@ -616,7 +664,7 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
                           <span className={`w-1.5 h-1.5 rounded-full ${slot.isMine ? 'bg-white' : 'bg-emerald-500'}`}></span>
                         </div>
                         <span className="text-[8px] opacity-80 uppercase tracking-tighter truncate">
-                          {slot.booking.type === 'PERIOD' ? 'Período Integral' : `${targetRoom}`}
+                          {slot.booking.type === 'PERIOD' ? (slot.booking.periodName ? `Período ${slot.booking.periodName}` : 'Período') : `${targetRoom}`}
                         </span>
                       </div>
                     )}
@@ -937,14 +985,19 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setBookingType('PERIOD')}
+                        onClick={() => {
+                          setBookingType('PERIOD');
+                          if (isSaturday && bookingPeriodShift === 'NIGHT') {
+                            setBookingPeriodShift('MORNING');
+                          }
+                        }}
                         className={`py-2.5 px-3 rounded-xl text-[11px] font-black uppercase tracking-wider border transition-all ${
                           bookingType === 'PERIOD'
                             ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                             : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
                         }`}
                       >
-                        Período ({hoursStart}h-{maxClosing}h)
+                        Por Período (Turno)
                       </button>
                     </div>
                   </div>
@@ -988,17 +1041,67 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-teal-50/60 border border-teal-100 rounded-2xl p-4 text-teal-800 text-xs flex items-center gap-3">
-                    <Clock size={18} className="text-teal-600 flex-shrink-0" />
-                    <div>
-                      <span className="font-black uppercase tracking-wider block">
-                        Período Integral ({hoursStart.toString().padStart(2, '0')}:00 às {maxClosing.toString().padStart(2, '0')}:00)
-                      </span>
-                      <span className="text-[11px] text-teal-700">
-                        {isSaturday 
-                          ? 'Aos sábados, o período integral cobre todo o funcionamento das 07:00 às 14:00 (7 horas).'
-                          : 'A sala ficará reservada exclusivamente para você durante todo o expediente do dia.'}
-                      </span>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-black text-gray-700 uppercase tracking-wider">
+                      Selecione o Turno Desejado
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {BOOKING_PERIODS.map(p => {
+                        const conf = getPeriodConfig(p.id, bookingDate);
+                        const isSelected = bookingPeriodShift === p.id;
+                        const isAvailable = conf.isAvailableOnDate;
+                        const roomObj = rooms.find(r => r.id === bookingRoom);
+                        let rate = 0;
+                        if (p.id === 'MORNING') rate = roomObj?.morningRate || INITIAL_PERIOD_RATES.MORNING;
+                        else if (p.id === 'AFTERNOON') {
+                          const base = roomObj?.afternoonRate || INITIAL_PERIOD_RATES.AFTERNOON;
+                          rate = isSaturday ? Math.round(base * (2 / 6)) : base;
+                        } else {
+                          rate = roomObj?.nightRate || INITIAL_PERIOD_RATES.NIGHT;
+                        }
+
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            disabled={!isAvailable}
+                            onClick={() => {
+                              if (isAvailable) setBookingPeriodShift(p.id);
+                            }}
+                            className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                              !isAvailable
+                                ? 'bg-gray-100/70 border-gray-200 text-gray-400 opacity-60 cursor-not-allowed'
+                                : isSelected
+                                ? 'bg-teal-50 border-teal-600 text-teal-900 shadow-sm ring-2 ring-teal-500/20'
+                                : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50/50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className={`p-2 rounded-xl ${
+                                isSelected ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-500'
+                              }`}>
+                                {p.id === 'MORNING' ? <Sunrise size={18} /> : p.id === 'AFTERNOON' ? <Sun size={18} /> : <Moon size={18} />}
+                              </div>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                isSelected ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {isAvailable ? `R$ ${rate.toFixed(2)}` : 'Indisponível'}
+                              </span>
+                            </div>
+                            <div>
+                              <div className="font-black text-xs uppercase tracking-wide">
+                                {p.name}
+                              </div>
+                              <span className="text-[11px] font-bold text-gray-600 block mt-0.5">
+                                {conf.startHour.toString().padStart(2, '0')}:00 às {conf.endHour.toString().padStart(2, '0')}:00
+                              </span>
+                              <span className="text-[10px] text-gray-400 mt-0.5 block font-medium">
+                                {!isAvailable ? 'Fechado aos sábados' : `${conf.duration} horas de locação`}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1138,7 +1241,7 @@ export const Calendar: React.FC<CalendarProps> = ({ user, onOpenClients }) => {
                 <span className="text-gray-400 font-bold uppercase tracking-wider">Horário:</span>
                 <span className="font-black">
                   {selectedBooking.type === 'PERIOD'
-                    ? '07:00 às 22:00 (Período Integral)'
+                    ? `${selectedBooking.hour.toString().padStart(2, '0')}:00 às ${selectedBooking.endTimeHour.toString().padStart(2, '0')}:00 (${selectedBooking.periodName ? `Período ${selectedBooking.periodName}` : 'Período'})`
                     : `${selectedBooking.hour}:00 às ${selectedBooking.endTimeHour}:00 (${selectedBooking.durationHours}h)`
                   }
                 </span>

@@ -33,12 +33,17 @@ export interface Client {
 
 export type RoomId = 'Sala 1' | 'Sala 2';
 
+export type PeriodShift = 'MORNING' | 'AFTERNOON' | 'NIGHT';
+
 export interface Room {
   id: RoomId;
   name: string;
   description: string;
   hourlyRate: number;
-  dailyRate: number; // Tarifa para o período integral 07:00 - 22:00
+  dailyRate: number; // Tarifa legada ou integral
+  morningRate?: number; // Tarifa para o período da manhã (07h às 12h)
+  afternoonRate?: number; // Tarifa para o período da tarde (12h às 18h)
+  nightRate?: number; // Tarifa para o período da noite (18h às 22h)
   status: 'ACTIVE' | 'MAINTENANCE';
   openHour: number;
   closeHour: number;
@@ -57,10 +62,12 @@ export interface Booking {
   clientName?: string;
   roomId: RoomId;
   date: string; // YYYY-MM-DD
-  hour: number; // starting hour (e.g. 14)
-  durationHours: number; // e.g. 1, 2, or period (13h)
+  hour: number; // starting hour (e.g. 7 para manhã, 12 para tarde, 18 para noite)
+  durationHours: number; // e.g. 5h manhã, 6h tarde, 4h noite
   endTimeHour: number; // hour + durationHours
   type: BookingType;
+  periodShift?: PeriodShift; // MORNING | AFTERNOON | NIGHT
+  periodName?: string; // 'Manhã' | 'Tarde' | 'Noite'
   priceAtBooking: number; // rate per hour applied
   totalAmount: number; // total cost for this booking
   paymentStatus: PaymentStatus;
