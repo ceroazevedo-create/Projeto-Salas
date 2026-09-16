@@ -766,7 +766,7 @@ export async function createBooking(
         hourlyRate,
 
       period_rate:
-        periodRate,
+        periodRate ?? 0,
 
       total_amount:
         totalAmount,
@@ -1333,7 +1333,7 @@ export async function updateBooking(
         hourlyRate,
 
       period_rate:
-        periodRate,
+        periodRate ?? 0,
 
       total_amount:
         totalAmount,
